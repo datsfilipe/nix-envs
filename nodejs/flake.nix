@@ -18,12 +18,16 @@
         nodejs_latest
         nodejs_latest.pkgs.pnpm
         nodejs_latest.pkgs.yarn
+        libuuid
       ];
     in
       with pkgs; {
         devShells.default = mkShell {
           name = "nodejs";
           packages = inputs;
+          env = {
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.libuuid];
+          };
         };
       });
 }

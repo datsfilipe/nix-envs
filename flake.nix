@@ -61,11 +61,6 @@
         path = ./git-hooks;
         description = "Git hooks template";
       };
-
-      work = {
-        path = ./work;
-        description = "Work template";
-      };
     };
 
     devShells.x86_64-linux = let
