@@ -10,7 +10,7 @@ if [ -f .envrc ]; then
   exit 1
 fi
 
-nix flake new -t "github:datsfilipe/nix-envs#$1"
+nix flake new -t "github:datsfilipe/nix-envs#$1" ./
 
 echo "
 .envrc
