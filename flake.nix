@@ -15,6 +15,11 @@
         description = "NodeJS template";
       };
 
+      work = {
+        path = ./work;
+        description = "Work template";
+      };
+
       bun = {
         path = ./bun;
         description = "Bun template";
