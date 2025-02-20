@@ -10,6 +10,11 @@
     nixpkgs,
   }: rec {
     templates = {
+      nodejs = {
+        path = ./nodejs;
+        description = "NodeJS template";
+      };
+
       bun = {
         path = ./bun;
         description = "Bun template";
