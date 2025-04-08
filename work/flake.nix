@@ -19,6 +19,7 @@
         nodejs_20.pkgs.pnpm
         nodejs_20.pkgs.yarn
         libuuid
+        systemd
       ];
     in
       with pkgs; {
@@ -26,7 +27,7 @@
           name = "nodejs";
           packages = inputs;
           env = {
-            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.libuuid];
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.libuuid pkgs.systemd];
           };
         };
       });
