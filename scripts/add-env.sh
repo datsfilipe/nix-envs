@@ -28,7 +28,8 @@ for arg in "$@"; do
   
   if curl --output /dev/null --silent --head --fail "$env_url"; then
     env="$(curl -s "$env_url")"
-    content="${content}$(echo "$env" | tail -n +2)\n"
+    processed_env=$(echo "$env" | tail -n +2)
+    content="${content}${processed_env}\n"
   fi
 done
 
