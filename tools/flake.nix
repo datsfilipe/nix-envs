@@ -31,6 +31,7 @@
         devShells = {
           general = mkDevShell {
             packages = with pkgs; [
+              vscode-langservers-extracted
               codespell
             ];
           };
