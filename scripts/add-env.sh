@@ -11,13 +11,25 @@ else
   content=""
 fi
 
-for template in "$@"; do
-  content="${content}use flake \"github:datsfilipe/nix-envs?dir=$template\"\n"
+for arg in "$@"; do
+  if echo "$arg" | grep -q "#"; then
+    template=$(echo "$arg" | cut -d '#' -f 1)
+    output=$(echo "$arg" | cut -d '#' -f 2)
+    
+    content="${content}use flake \"github:datsfilipe/nix-envs?dir=$template#$output\"\n"
+  else
+    content="${content}use flake \"github:datsfilipe/nix-envs?dir=$arg\"\n"
+  fi
 done
 
-for template in "$@"; do
-  env="$(curl -s https://raw.githubusercontent.com/datsfilipe/nix-envs/refs/heads/main/$template/.envrc)"
-  content="${content}$(echo "$env" | tail -n +2)\n"
+for arg in "$@"; do
+  template=$(echo "$arg" | cut -d '#' -f 1)
+  env_url="https://raw.githubusercontent.com/datsfilipe/nix-envs/refs/heads/main/$template/.envrc"
+  
+  if curl --output /dev/null --silent --head --fail "$env_url"; then
+    env="$(curl -s "$env_url")"
+    content="${content}$(echo "$env" | tail -n +2)\n"
+  fi
 done
 
 content=$(echo -e "$content" | sed '/^$/d')
@@ -30,4 +42,4 @@ echo "
 .direnv
 " >> .git/info/exclude
 
-echo "direnv is now configured with envs: $*"
+echo "direnv is now configured with: $*"
