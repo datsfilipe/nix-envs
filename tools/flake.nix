@@ -19,11 +19,13 @@
         mkDevShell = {
           packages ? [],
           env ? {},
+          shellHook ? "",
         }:
           pkgs.mkShell {
             inherit packages;
             shellHook = ''
               ${builtins.concatStringsSep "\n" (builtins.attrValues (builtins.mapAttrs (k: v: "export ${k}=${v}") env))}
+              ${shellHook}
               echo "env is ready!"
             '';
           };
@@ -67,6 +69,30 @@
             packages = with pkgs; [
               alejandra
             ];
+          };
+
+          solidity = mkDevShell {
+            shellHook = ''
+              if ! command -v npm &>/dev/null; then
+                echo -e "\033[33m[WARN]: npm is not enabled in current shell, skipping...\033[0m"
+                exit 0
+              fi
+
+              project_root=$(git rev-parse --show-toplevel 2>/dev/null)
+              export NODE_PATH="$project_root/node_modules/.global/lib/node_modules"
+
+              if [ -z "$project_root" ]; then
+                project_root=$(pwd)
+              fi
+
+              export NPM_CONFIG_PREFIX="$project_root/node_modules/.global"
+              export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
+
+              if ! npm list -g @nomicfoundation/solidity-language-server &>/dev/null; then
+                echo "adding solidity-language-server..."
+                npm install -g @nomicfoundation/solidity-language-server
+              fi
+            '';
           };
         };
 
