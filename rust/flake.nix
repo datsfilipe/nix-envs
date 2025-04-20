@@ -30,12 +30,6 @@
             env = {
               PKG_CONFIG_PATH = "${openssl.dev.outPath}/lib/pkgconfig:" + "$PKG_CONFIG_PATH";
             };
-            buildInputs = [
-              (rust-bin.beta.latest.default.override {
-                extensions = ["rust-src"];
-                targets = ["wasm32-wasi"];
-              })
-            ];
           };
       }
     );
