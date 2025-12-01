@@ -1,33 +1,55 @@
 {
-  description = "dats nodejs shell";
+  description = "Dynamic Node.js environments";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = {
-    self,
-    nixpkgs,
-    flake-utils,
-  }:
-    flake-utils.lib.eachDefaultSystem (system: let
-      pkgs = import nixpkgs {inherit system;};
+  outputs = {self, nixpkgs, flake-utils}:
+    let
+      manifest = builtins.fromJSON (builtins.readFile ./versions.json);
+      sanitize = v: "v" + builtins.replaceStrings ["."] ["-"] v;
 
-      inputs = with pkgs; [
-        nodejs_latest
-        nodejs_latest.pkgs.pnpm
-        nodejs_latest.pkgs.yarn
-        libuuid
-      ];
-    in
-      with pkgs; {
-        devShells.default = mkShell {
-          name = "nodejs";
-          packages = inputs;
-          env = {
-            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [pkgs.libuuid];
+      mkNode = pkgs: version: hash:
+        pkgs.stdenv.mkDerivation {
+          pname = "nodejs-custom";
+          inherit version;
+
+          src = pkgs.fetchurl {
+            url = "https://nodejs.org/dist/v${version}/node-v${version}-linux-x64.tar.xz";
+            sha256 = hash;
           };
+
+          dontConfigure = true;
+          dontBuild = true;
+          nativeBuildInputs = [pkgs.autoPatchelfHook pkgs.gnutar pkgs.xz];
+          buildInputs = [pkgs.stdenv.cc.cc.lib];
+
+          installPhase = ''
+            mkdir -p "$out"
+            cp -r bin include lib share "$out"/
+          '';
         };
+    in
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+
+        shells =
+          pkgs.lib.mapAttrs'
+          (version: hash:
+            pkgs.lib.nameValuePair
+            (sanitize version)
+            (pkgs.mkShell {
+              name = "nodejs-${version}";
+              packages = [(mkNode pkgs version hash)];
+              shellHook = "echo \"Node.js ${version} ready\"";
+            }))
+          manifest.versions;
+
+        defaultName = sanitize manifest.latest;
+      in {
+        devShells = shells // {default = shells.${defaultName};};
       });
 }

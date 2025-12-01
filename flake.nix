@@ -1,5 +1,5 @@
 {
-  description = "Nix powered development environment templates";
+  description = "Zero-config dynamic Nix environments";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -26,8 +26,8 @@
       };
 
       python = {
-        path = ./nodejs;
-        description = "NodeJS template";
+        path = ./python;
+        description = "Python template";
       };
 
       go = {
@@ -57,11 +57,6 @@
         description = "Elixir template";
       };
 
-      qmk = {
-        path = ./qmk;
-        description = "QMK template";
-      };
-
       prisma = {
         path = ./prisma;
         description = "Prisma template";
@@ -70,6 +65,11 @@
       git-hooks = {
         path = ./git-hooks;
         description = "Git hooks template";
+      };
+
+      tools = {
+        path = ./tools;
+        description = "Reusable tools flake";
       };
     };
 

@@ -1,0 +1,41 @@
+name: Update Versions
+
+on:
+  schedule:
+    - cron: "0 0 * * 3,6"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  update-all:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v27
+
+      - name: Update Node.js
+        run: ./scripts/update-node.sh
+
+      - name: Update Go
+        run: ./scripts/update-go.sh
+
+      - name: Update Rust
+        run: ./scripts/update-rust.sh
+
+      - name: Update Python
+        run: ./scripts/update-python.sh
+
+      - name: Update Bun
+        run: ./scripts/update-bun.sh
+
+      - name: Commit changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore(versions): update manifests [skip ci]"
+          branch: main
+          file_pattern: "*/versions.json"

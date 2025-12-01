@@ -1,13 +1,25 @@
 # nix-envs
 
-Nix powered development environment templates.
+Zero-config Nix development shells that you select via the flake URL fragment (e.g. `#v25-2-1`).
 
-# Template
+## Usage
 
-Use `nix flake new -t github:datsfilipe/nix-envs#env` to use the desired template.
+- Node.js: `use flake "github:datsfilipe/nix-envs?dir=nodejs#v25-2-1"`
+- Go: `use flake "github:datsfilipe/nix-envs?dir=go#v1-25-4"`
+- Rust: `use flake "github:datsfilipe/nix-envs?dir=rust#v1-91-1"`
+- Python: `use flake "github:datsfilipe/nix-envs?dir=python#v3-14-0"`
+- Bun: `use flake "github:datsfilipe/nix-envs?dir=bun#v1-3-3"`
+- Tools (static helpers like LSPs): `use flake "github:datsfilipe/nix-envs?dir=tools#rust"`
 
-**Note:** you can also use `scripts/use-template.sh` to use the template if you want the contents to be ignored by git.
+Versions are declared in `*/versions.json` and exposed as devShell names formatted as `v<major>-<minor>-<patch>`. Each directory still exposes `#default` as the latest entry in its manifest.
 
-# Add Approach
+## Automation
 
-If you're not gonna customize much, you can use `scripts/add.sh` with desired env, e.g. `scripts/add.sh nodejs tools#typescript`.
+- `scripts/update-*.sh`: fetches the latest upstream versions and updates `versions.json` (uses `nix-prefetch-url`).
+- `scripts/test-local.sh <dir>`: quick check that a flake evaluates (`nix flake check` + `nix eval`).
+- `.github/workflows/update-versions.yml`: cron (Wed/Sat @ 00:00 UTC) + manual dispatch to refresh manifests and commit them.
+- `.github/workflows/test.yml`: CI smoke test across the dynamic flakes.
+
+## Templates
+
+Directories double as flake templates: `nodejs`, `go`, `rust`, `python`, `bun`, `crystal`, `elixir`, `electron`, `prisma`, `git-hooks`, `tools`, `work`.
