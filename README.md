@@ -13,7 +13,7 @@ Zero-config Nix development shells that you select via the flake URL fragment (e
 
 Versions are declared in `*/versions.json` and exposed as devShell names formatted as `v<major>-<minor>-<patch>`. Each directory still exposes `#default` as the latest entry in its manifest.
 
-Tools flake shells piggyback on the dynamic language envs (Node/Go/Rust/Python/Bun) and install their LSPs/formatters using the corresponding package manager at shell start (npm/pip/go install/cargo install).
+Tools flake shells piggyback on the dynamic language envs (Node/Go/Rust/Python/Bun) and include their LSPs/formatters directly from `nixpkgs` (no package-manager installs or writable paths needed).
 
 ## Automation
 

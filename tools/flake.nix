@@ -32,6 +32,30 @@
         basePython = python.devShells.${system}.default;
         baseBun = bun.devShells.${system}.default;
 
+        nodePkgs =
+          if pkgs ? nodePackages_latest
+          then pkgs.nodePackages_latest
+          else pkgs.nodePackages;
+
+        nodeTools =
+          [
+            nodePkgs.typescript-language-server
+            nodePkgs.typescript
+            nodePkgs.prettier
+          ]
+          ++ pkgs.lib.optional (pkgs.lib.hasAttrByPath ["@biomejs/biome"] nodePkgs) nodePkgs."@biomejs/biome";
+
+        goTools = [pkgs.gopls];
+        rustTools = [pkgs.rust-analyzer];
+
+        pythonTools =
+          let
+            py = pkgs.python3Packages;
+          in
+            [py.python-lsp-server] ++ pkgs.lib.optional (pkgs.lib.hasAttr "pylsp-rope" py) py.pylsp-rope;
+
+        solidityTools = pkgs.lib.optional (pkgs ? nomicfoundation-solidity-language-server) pkgs.nomicfoundation-solidity-language-server;
+
         mkShellWith = {
           base ? null,
           packages ? [],
@@ -53,72 +77,22 @@
 
           typescript = mkShellWith {
             base = baseNode;
-            shellHook = ''
-              set -euo pipefail
-              project_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-              export NPM_CONFIG_PREFIX="$project_root/.tools/node"
-              export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
-              export NODE_PATH="$NPM_CONFIG_PREFIX/lib/node_modules"
-
-              need_install=0
-              for pkg in typescript-language-server typescript prettier @biomejs/biome; do
-                if ! npm list -g "$pkg" --depth=0 >/dev/null 2>&1; then
-                  need_install=1
-                  break
-                fi
-              done
-
-              if [ "$need_install" -eq 1 ]; then
-                echo "Installing TypeScript tooling with npm..."
-                npm install -g typescript-language-server typescript prettier @biomejs/biome
-              fi
-            '';
+            packages = nodeTools;
           };
 
           rust = mkShellWith {
             base = baseRust;
-            shellHook = ''
-              set -euo pipefail
-              project_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-              export CARGO_HOME="$project_root/.tools/rust/cargo"
-              export PATH="$project_root/.tools/rust/bin:$PATH"
-
-              if ! command -v rust-analyzer >/dev/null 2>&1; then
-                echo "Installing rust-analyzer with cargo..."
-                mkdir -p "$project_root/.tools/rust/bin"
-                cargo install rust-analyzer --locked --git https://github.com/rust-lang/rust-analyzer --tag 2024-11-25
-              fi
-            '';
+            packages = rustTools;
           };
 
           go = mkShellWith {
             base = baseGo;
-            shellHook = ''
-              set -euo pipefail
-              project_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-              export GOBIN="$project_root/.tools/go/bin"
-              export PATH="$GOBIN:$PATH"
-
-              if ! command -v gopls >/dev/null 2>&1; then
-                echo "Installing gopls with go install..."
-                go install golang.org/x/tools/gopls@latest
-              fi
-            '';
+            packages = goTools;
           };
 
           python = mkShellWith {
             base = basePython;
-            shellHook = ''
-              set -euo pipefail
-              project_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-              export PYTHONUSERBASE="$project_root/.tools/python"
-              export PATH="$PYTHONUSERBASE/bin:$PATH"
-
-              if ! command -v pylsp >/dev/null 2>&1; then
-                echo "Installing python-lsp-server with pip..."
-                pip install --user "python-lsp-server[rope,pyflakes]"
-              fi
-            '';
+            packages = pythonTools;
           };
 
           bun = mkShellWith {
@@ -138,22 +112,7 @@
 
           solidity = mkShellWith {
             base = baseNode;
-            shellHook = ''
-              if ! command -v npm &>/dev/null; then
-                echo "[WARN]: npm is not enabled in current shell, skipping solidity-language-server install"
-                exit 0
-              fi
-
-              project_root=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
-              export NODE_PATH="$project_root/node_modules/.global/lib/node_modules"
-              export NPM_CONFIG_PREFIX="$project_root/node_modules/.global"
-              export PATH="$NPM_CONFIG_PREFIX/bin:$PATH"
-
-              if ! npm list -g @nomicfoundation/solidity-language-server &>/dev/null; then
-                echo "adding solidity-language-server..."
-                npm install -g @nomicfoundation/solidity-language-server
-              fi
-            '';
+            packages = solidityTools;
           };
 
           default = mkShellWith {};
