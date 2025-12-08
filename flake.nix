@@ -1,92 +1,38 @@
 {
-  description = "Nix powered development environment templates";
+  description = "nix-envs CLI tool";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
   outputs = {
     self,
     nixpkgs,
-  }: rec {
-    templates = {
-      nodejs = {
-        path = ./nodejs;
-        description = "NodeJS template";
-      };
-
-      work = {
-        path = ./work;
-        description = "Work template";
-      };
-
-      bun = {
-        path = ./bun;
-        description = "Bun template";
-      };
-
-      python = {
-        path = ./nodejs;
-        description = "NodeJS template";
-      };
-
-      go = {
-        path = ./go;
-        description = "Golang template";
-      };
-
-      golang = templates.go;
-
-      crystal = {
-        path = ./crystal;
-        description = "Crystal template";
-      };
-
-      rust = {
-        path = ./rust;
-        description = "Rust template";
-      };
-
-      electron = {
-        path = ./electron;
-        description = "Electron template";
-      };
-
-      elixir = {
-        path = ./elixir;
-        description = "Elixir template";
-      };
-
-      qmk = {
-        path = ./qmk;
-        description = "QMK template";
-      };
-
-      prisma = {
-        path = ./prisma;
-        description = "Prisma template";
-      };
-
-      git-hooks = {
-        path = ./git-hooks;
-        description = "Git hooks template";
-      };
-    };
-
-    devShells.x86_64-linux = let
-      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+    flake-utils,
+  }:
+    flake-utils.lib.eachDefaultSystem (system: let
+      pkgs = import nixpkgs {inherit system;};
     in {
-      default = pkgs.mkShell {
+      packages.default = pkgs.buildGoModule {
+        pname = "nix-envs";
+        version = "0.1.0";
+        src = ./.;
+
+        vendorHash = null;
+
+        postInstall = ''
+          mv $out/bin/main $out/bin/nix-envs || true
+        '';
+      };
+
+      devShells.default = pkgs.mkShell {
+        name = "nix-envs-dev";
         packages = with pkgs; [
+          go
+          gopls
           alejandra
         ];
-        name = "nix-envs";
       };
-    };
-
-    formatter = let
-      system = "x86_64-linux";
-    in
-      nixpkgs.legacyPackages.${system}.alejandra;
-  };
+    });
 }
