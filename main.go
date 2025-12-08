@@ -321,19 +321,42 @@ func getProjectName() string {
 }
 
 func getCacheDir(project, template string) string {
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cache", "envs", project, template)
+	home := os.Getenv("HOME")
+	xdg := os.Getenv("XDG_CACHE_HOME")
+	if xdg == "" {
+		xdg = filepath.Join(home, ".cache")
+	}
+	return filepath.Join(xdg, "envs", project, template)
+}
+
+func getCacheDirDisplay(project, template string) string {
+	home := os.Getenv("HOME")
+	xdg := os.Getenv("XDG_CACHE_HOME")
+	if xdg == "" {
+		xdg = filepath.Join(home, ".cache")
+	}
+
+	cachePath := filepath.Join(xdg, "envs", project, template)
+
+	if trimmed, ok := strings.CutPrefix(cachePath, home); ok {
+		return "$HOME" + trimmed
+	}
+	return cachePath
 }
 
 func setupEnvrc(targetDir string) {
-	line := fmt.Sprintf("use flake \"%s\"", targetDir)
+	home := os.Getenv("HOME")
+	displayPath := targetDir
+	if trimmed, ok := strings.CutPrefix(targetDir, home); ok {
+		displayPath = "$HOME" + trimmed
+	}
 
+	line := fmt.Sprintf("use flake \"%s\"", displayPath)
 	file, err := os.OpenFile(".envrc", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		fatal("Could not open .envrc")
 	}
 	defer file.Close()
-
 	content, _ := os.ReadFile(".envrc")
 	if !strings.Contains(string(content), line) {
 		if _, err := file.WriteString(line + "\n"); err != nil {
@@ -345,16 +368,20 @@ func setupEnvrc(targetDir string) {
 }
 
 func removeFromEnvrc(targetDir string) {
-	lineToRemove := fmt.Sprintf("use flake \"%s\"", targetDir)
+	home := os.Getenv("HOME")
+	displayPath := targetDir
+	if trimmed, ok := strings.CutPrefix(targetDir, home); ok {
+		displayPath = "$HOME" + trimmed
+	}
+
+	lineToRemove := fmt.Sprintf("use flake \"%s\"", displayPath)
 	input, err := os.ReadFile(".envrc")
 	if err != nil {
 		return
 	}
-
 	lines := strings.Split(string(input), "\n")
 	var newLines []string
 	found := false
-
 	for _, line := range lines {
 		if strings.TrimSpace(line) != strings.TrimSpace(lineToRemove) && line != "" {
 			newLines = append(newLines, line)
@@ -362,7 +389,6 @@ func removeFromEnvrc(targetDir string) {
 			found = true
 		}
 	}
-
 	if found {
 		output := strings.Join(newLines, "\n")
 		if len(output) > 0 {
