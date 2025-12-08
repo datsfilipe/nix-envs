@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,13 +69,13 @@ func handleCreate(args []string) {
 	case "nodejs":
 		flakeContent, err = generateNodeJS(version)
 	case "go":
-		flakeContent = generateGo(version)
+		flakeContent, err = generateGo(version)
 	case "rust":
 		flakeContent = generateRust(version)
 	case "python":
-		flakeContent = generatePython(version)
+		flakeContent, err = generatePython(version)
 	case "bun":
-		flakeContent = generateBun()
+		flakeContent, err = generateBun(version)
 	default:
 		fatal("Unknown template: " + template)
 	}
@@ -180,7 +182,6 @@ func generateNodeJS(version string) (string, error) {
 
 	return fmt.Sprintf(`{
   description = "NodeJS %s Custom Environment";
-
   inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
   
   outputs = { self, nixpkgs }: let
@@ -206,7 +207,11 @@ func generateNodeJS(version string) (string, error) {
     devShells.${system}.default = pkgs.mkShell {
       packages = [ 
         nodeCustom
-        pkgs.python3 # often needed for node-gyp
+        pkgs.python3
+        pkgs.nodePackages.typescript-language-server
+        pkgs.nodePackages.prettier
+        pkgs.biome
+        pkgs.vscode-langservers-extracted
       ];
       env = {
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libuuid pkgs.stdenv.cc.cc.lib ];
@@ -217,28 +222,78 @@ func generateNodeJS(version string) (string, error) {
 }`, version, version, version, version, arch, hash), nil
 }
 
-func generateGo(version string) string {
-	major := strings.Split(version, ".")[0]
-	pkgName := "go"
-	if major != "" && major != "go" {
-		pkgName = "go_1_" + major
+func generateGo(version string) (string, error) {
+	arch := "amd64"
+	if runtime.GOARCH == "arm64" {
+		arch = "arm64"
 	}
 
+	osType := "linux"
+	filename := fmt.Sprintf("go%s.%s-%s.tar.gz", version, osType, arch)
+	hashUrl := fmt.Sprintf("https://dl.google.com/go/%s.sha256", filename)
+
+	fmt.Printf("Fetching hash for Go v%s...\n", version)
+
+	resp, err := http.Get(hashUrl)
+	if err != nil || resp.StatusCode != 200 {
+		return "", fmt.Errorf("Could not find Go version %s. Checked: %s", version, hashUrl)
+	}
+	defer resp.Body.Close()
+
+	hashBytes, _ := io.ReadAll(resp.Body)
+	hash := strings.TrimSpace(string(hashBytes))
+
+	fmt.Printf("%sFound hash: %s%s\n", ColorBlue, hash, ColorReset)
+
 	return fmt.Sprintf(`{
-  description = "Go %s Environment";
-  inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-  };
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system: let
-      pkgs = import nixpkgs { inherit system; };
-    in {
-      devShells.default = pkgs.mkShell {
-        packages = [ pkgs.%s pkgs.gopls ];
+  description = "Go %s Custom Environment";
+  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+
+  outputs = { self, nixpkgs }: let
+    system = "x86_64-linux";
+    pkgs = import nixpkgs { inherit system; };
+
+    goCustom = pkgs.stdenv.mkDerivation {
+      name = "go-%s";
+      src = pkgs.fetchurl {
+        url = "https://dl.google.com/go/%s";
+        sha256 = "%s";
       };
-    });
-}`, version, pkgName)
+
+      dontAutoPatchelf = true;
+      nativeBuildInputs = [ pkgs.autoPatchelfHook ];
+      buildInputs = [ pkgs.stdenv.cc.cc.lib ];
+
+      installPhase = ''
+        mkdir -p $out/share/go
+        cp -r * $out/share/go
+        
+        mkdir -p $out/bin
+        ln -s $out/share/go/bin/go $out/bin/go
+        ln -s $out/share/go/bin/gofmt $out/bin/gofmt
+      '';
+
+      postFixup = ''
+        autoPatchelf $out/bin
+      '';
+    };
+  in {
+    devShells.${system}.default = pkgs.mkShell {
+      packages = [ 
+        goCustom
+        pkgs.gopls
+        pkgs.delve
+        pkgs.go-tools
+        pkgs.vscode-langservers-extracted
+      ];
+
+      shellHook = ''
+        export GOROOT=${goCustom}/share/go
+        export PATH=$GOROOT/bin:$PATH
+      '';
+    };
+  };
+}`, version, version, filename, hash), nil
 }
 
 func generateRust(version string) string {
@@ -264,7 +319,9 @@ func generateRust(version string) string {
           pkgs.pkg-config 
           pkgs.openssl 
           %s 
-          pkgs.rust-analyzer 
+          pkgs.rust-analyzer
+          pkgs.vscode-langservers-extracted
+          pkgs.codespell
         ];
         env = {
           PKG_CONFIG_PATH = "${pkgs.openssl.dev}/lib/pkgconfig";
@@ -274,40 +331,160 @@ func generateRust(version string) string {
 }`, version, rustVer)
 }
 
-func generatePython(version string) string {
-	return `{
-  description = "Python Environment";
-  inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-  };
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system: let
-      pkgs = import nixpkgs { inherit system; };
-    in {
-      devShells.default = pkgs.mkShell {
-        packages = [ pkgs.python3 pkgs.python3Packages.virtualenv pkgs.python3Packages.pip ];
+func generatePython(version string) (string, error) {
+	url := fmt.Sprintf("https://www.python.org/ftp/python/%s/Python-%s.tar.xz", version, version)
+	fmt.Printf("Fetching Python v%s to calculate hash (this may take a moment)...\n", version)
+
+	resp, err := http.Get(url)
+	if err != nil || resp.StatusCode != 200 {
+		return "", fmt.Errorf("Could not find Python version %s at %s", version, url)
+	}
+	defer resp.Body.Close()
+
+	tmpFile, err := os.CreateTemp("", "python-dl-*")
+	if err != nil {
+		return "", fmt.Errorf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name()) // Clean up after
+	defer tmpFile.Close()
+
+	hasher := sha256.New()
+	mw := io.MultiWriter(tmpFile, hasher)
+
+	size, err := io.Copy(mw, resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("Failed to download Python: %v", err)
+	}
+
+	hash := hex.EncodeToString(hasher.Sum(nil))
+	fmt.Printf("%sDownloaded %.2f MB. Hash: %s%s\n", ColorBlue, float64(size)/1024/1024, hash, ColorReset)
+
+	return fmt.Sprintf(`{
+  description = "Python %s Custom Environment";
+  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+
+  outputs = { self, nixpkgs }: let
+    system = "x86_64-linux";
+    pkgs = import nixpkgs { inherit system; };
+
+    pythonCustom = pkgs.stdenv.mkDerivation {
+      name = "python-%s";
+      src = pkgs.fetchurl {
+        url = "%s";
+        sha256 = "%s";
       };
-    });
-}`
+
+      nativeBuildInputs = [ pkgs.pkg-config ];
+      
+      buildInputs = [ 
+        pkgs.openssl 
+        pkgs.zlib 
+        pkgs.libffi 
+        pkgs.readline 
+        pkgs.sqlite 
+        pkgs.bzip2 
+        pkgs.ncurses
+        pkgs.xz
+      ];
+
+      configureFlags = [ "--enable-optimizations" ];
+
+      preConfigure = ''
+        export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [ pkgs.openssl pkgs.zlib pkgs.stdenv.cc.cc.lib ]}:$LD_LIBRARY_PATH
+      '';
+    };
+  in {
+    devShells.${system}.default = pkgs.mkShell {
+      packages = [ 
+        pythonCustom
+        pkgs.python3Packages.pip
+        pkgs.python3Packages.virtualenv
+        pkgs.vscode-langservers-extracted
+        pkgs.codespell
+      ];
+      
+      env = {
+        LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.openssl pkgs.zlib pkgs.stdenv.cc.cc.lib ];
+      };
+    };
+  };
+}`, version, version, url, hash), nil
 }
 
-func generateBun() string {
-	return `{
-  description = "Bun Environment";
-  inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
-    flake-utils.url = "github:numtide/flake-utils";
-  };
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system: let
-      pkgs = import nixpkgs { inherit system; };
-    in {
-      devShells.default = pkgs.mkShell {
-        packages = [ pkgs.bun ];
+func generateBun(version string) (string, error) {
+	arch := "x64"
+	if runtime.GOARCH == "arm64" {
+		arch = "aarch64"
+	}
+
+	fmt.Printf("Fetching hash for Bun v%s...\n", version)
+	shasumsUrl := fmt.Sprintf("https://github.com/oven-sh/bun/releases/download/bun-v%s/SHASUMS256.txt", version)
+
+	resp, err := http.Get(shasumsUrl)
+	if err != nil || resp.StatusCode != 200 {
+		return "", fmt.Errorf("Could not find Bun version v%s (HTTP %d)", version, resp.StatusCode)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	bodyString := string(bodyBytes)
+
+	targetFile := fmt.Sprintf("bun-linux-%s.zip", arch)
+	hash := ""
+
+	scanner := bufio.NewScanner(strings.NewReader(bodyString))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, targetFile) {
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				hash = parts[0]
+				break
+			}
+		}
+	}
+
+	if hash == "" {
+		return "", fmt.Errorf("Hash not found for %s. Does this version support %s?", version, arch)
+	}
+
+	fmt.Printf("%sFound hash: %s%s\n", ColorBlue, hash, ColorReset)
+
+	return fmt.Sprintf(`{
+  description = "Bun %s Environment";
+  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+
+  outputs = { self, nixpkgs }: let
+    system = "x86_64-linux";
+    pkgs = import nixpkgs { inherit system; };
+    
+    bunCustom = pkgs.stdenv.mkDerivation {
+      name = "bun-%s";
+      src = pkgs.fetchurl {
+        url = "https://github.com/oven-sh/bun/releases/download/bun-v%s/bun-linux-%s.zip";
+        sha256 = "%s";
       };
-    });
-}`
+
+      nativeBuildInputs = [ pkgs.unzip pkgs.autoPatchelfHook ];
+
+      installPhase = ''
+        mkdir -p $out/bin
+        cp bun $out/bin/
+        chmod +x $out/bin/bun
+      '';
+    };
+  in {
+    devShells.${system}.default = pkgs.mkShell {
+      packages = [ 
+        bunCustom
+        pkgs.nodePackages.typescript-language-server
+        pkgs.nodePackages.prettier
+        pkgs.biome
+        pkgs.vscode-langservers-extracted
+      ];
+    };
+  };
+}`, version, version, version, arch, hash), nil
 }
 
 func getProjectName() string {
@@ -327,21 +504,6 @@ func getCacheDir(project, template string) string {
 		xdg = filepath.Join(home, ".cache")
 	}
 	return filepath.Join(xdg, "envs", project, template)
-}
-
-func getCacheDirDisplay(project, template string) string {
-	home := os.Getenv("HOME")
-	xdg := os.Getenv("XDG_CACHE_HOME")
-	if xdg == "" {
-		xdg = filepath.Join(home, ".cache")
-	}
-
-	cachePath := filepath.Join(xdg, "envs", project, template)
-
-	if trimmed, ok := strings.CutPrefix(cachePath, home); ok {
-		return "$HOME" + trimmed
-	}
-	return cachePath
 }
 
 func setupEnvrc(targetDir string) {
