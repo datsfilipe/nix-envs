@@ -207,9 +207,10 @@ func generateNodeJS(version string) (string, error) {
     devShells.${system}.default = pkgs.mkShell {
       packages = [ 
         nodeCustom
-        pkgs.python3
         pkgs.nodePackages.typescript-language-server
         pkgs.nodePackages.prettier
+        pkgs.nodePackages.yarn
+        pkgs.nodePackages.pnpm
         pkgs.biome
         pkgs.vscode-langservers-extracted
       ];
