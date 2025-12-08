@@ -107,16 +107,15 @@ func handleEdit(args []string) {
 		fatal("Environment does not exist. Create it first.")
 	}
 
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "nvim"
-	}
+	fmt.Printf("Opening %s with xdg-open...\n", flakePath)
 
-	cmd := exec.Command(editor, flakePath)
-	cmd.Stdin = os.Stdin
+	cmd := exec.Command("xdg-open", flakePath)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	cmd.Run()
+
+	if err := cmd.Run(); err != nil {
+		fatal(fmt.Sprintf("Failed to run xdg-open: %v", err))
+	}
 }
 
 func handleDelete(args []string) {
