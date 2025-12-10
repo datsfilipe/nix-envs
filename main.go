@@ -76,6 +76,10 @@ func handleCreate(args []string) {
 		flakeContent, err = generatePython(version)
 	case "bun":
 		flakeContent, err = generateBun(version)
+	case "lua":
+		flakeContent, err = generateLua(version)
+	case "nix":
+		flakeContent = generateNix()
 	default:
 		fatal("Unknown template: " + template)
 	}
@@ -213,6 +217,7 @@ func generateNodeJS(version string) (string, error) {
         pkgs.nodePackages.pnpm
         pkgs.biome
         pkgs.vscode-langservers-extracted
+        pkgs.codespell
       ];
       env = {
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libuuid pkgs.stdenv.cc.cc.lib ];
@@ -346,7 +351,7 @@ func generatePython(version string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile.Name()) // Clean up after
+	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
 	hasher := sha256.New()
@@ -482,10 +487,116 @@ func generateBun(version string) (string, error) {
         pkgs.nodePackages.prettier
         pkgs.biome
         pkgs.vscode-langservers-extracted
+        pkgs.codespell
       ];
     };
   };
 }`, version, version, version, arch, hash), nil
+}
+
+func generateLua(version string) (string, error) {
+	if version == "neovim" {
+		fmt.Printf("%sDetected Neovim dev environment request. Skipping Lua compilation.%s\n", ColorBlue, ColorReset)
+		return `{
+  description = "Neovim/Lua Development Environment";
+  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+
+  outputs = { self, nixpkgs }: let
+    system = "x86_64-linux";
+    pkgs = import nixpkgs { inherit system; };
+  in {
+    devShells.${system}.default = pkgs.mkShell {
+      packages = [
+        pkgs.lua-language-server
+        pkgs.stylua
+        pkgs.codespell
+      ];
+    };
+  };
+}`, nil
+	}
+
+	url := fmt.Sprintf("https://www.lua.org/ftp/lua-%s.tar.gz", version)
+	fmt.Printf("Fetching Lua v%s to calculate hash...\n", version)
+
+	resp, err := http.Get(url)
+	if err != nil || resp.StatusCode != 200 {
+		return "", fmt.Errorf("Could not find Lua version %s at %s", version, url)
+	}
+	defer resp.Body.Close()
+
+	tmpFile, err := os.CreateTemp("", "lua-dl-*")
+	if err != nil {
+		return "", fmt.Errorf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	hasher := sha256.New()
+	mw := io.MultiWriter(tmpFile, hasher)
+
+	size, err := io.Copy(mw, resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("Failed to download Lua: %v", err)
+	}
+
+	hash := hex.EncodeToString(hasher.Sum(nil))
+	fmt.Printf("%sDownloaded %.2f MB. Hash: %s%s\n", ColorBlue, float64(size)/1024/1024, hash, ColorReset)
+
+	return fmt.Sprintf(`{
+  description = "Lua %s Custom Environment";
+  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+
+  outputs = { self, nixpkgs }: let
+    system = "x86_64-linux";
+    pkgs = import nixpkgs { inherit system; };
+
+    luaCustom = pkgs.stdenv.mkDerivation {
+      name = "lua-%s";
+      src = pkgs.fetchurl {
+        url = "%s";
+        sha256 = "%s";
+      };
+
+      buildInputs = [ pkgs.readline ];
+      
+      buildPhase = ''
+        make linux
+      '';
+
+      installPhase = ''
+        make install INSTALL_TOP=$out
+      '';
+    };
+  in {
+    devShells.${system}.default = pkgs.mkShell {
+      packages = [
+        luaCustom
+        pkgs.lua-language-server
+        pkgs.stylua
+        pkgs.codespell
+      ];
+    };
+  };
+}`, version, version, url, hash), nil
+}
+
+func generateNix() string {
+	return `{
+  description = "Nix Development Environment";
+  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+
+  outputs = { self, nixpkgs }: let
+    system = "x86_64-linux";
+    pkgs = import nixpkgs { inherit system; };
+  in {
+    devShells.${system}.default = pkgs.mkShell {
+      packages = [
+        pkgs.alejandra
+      ];
+    };
+  };
+}`
 }
 
 func getProjectName() string {
@@ -596,8 +707,8 @@ func showHelp() {
 	fmt.Println("Usage: nix-envs [command] [template] [version]")
 	fmt.Println("\nCommands:")
 	fmt.Println("  create <tmpl> <ver>   Create environment (e.g., nodejs 20.11.0)")
-	fmt.Println("  edit <tmpl>           Edit the flake")
-	fmt.Println("  delete <tmpl>         Remove environment")
+	fmt.Println("  edit <tmpl>            Edit the flake")
+	fmt.Println("  delete <tmpl>          Remove environment")
 }
 
 func fatal(msg string) {
