@@ -214,9 +214,9 @@ func generateNodeJS(version string) (string, error) {
       packages = [ 
         nodeCustom
         pkgs.nodePackages.typescript-language-server
-        pkgs.nodePackages.prettier
         pkgs.nodePackages.yarn
         pkgs.nodePackages.pnpm
+        pkgs.prettierd
         pkgs.biome
         pkgs.vscode-langservers-extracted
         pkgs.codespell
@@ -486,7 +486,7 @@ func generateBun(version string) (string, error) {
       packages = [ 
         bunCustom
         pkgs.nodePackages.typescript-language-server
-        pkgs.nodePackages.prettier
+        pkgs.prettierd
         pkgs.biome
         pkgs.vscode-langservers-extracted
         pkgs.codespell
