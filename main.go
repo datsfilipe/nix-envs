@@ -80,6 +80,8 @@ func handleCreate(args []string) {
 		flakeContent, err = generateLua(version)
 	case "nix":
 		flakeContent = generateNix()
+	case "elixir":
+		flakeContent, err = generateElixir(version)
 	default:
 		fatal("Unknown template: " + template)
 	}
@@ -599,12 +601,80 @@ func generateNix() string {
 }`
 }
 
+func generateElixir(version string) (string, error) {
+	url := fmt.Sprintf("https://github.com/elixir-lang/elixir/archive/refs/tags/v%s.tar.gz", version)
+	fmt.Printf("Fetching Elixir v%s for hash calculation...\n", version)
+
+	resp, err := http.Get(url)
+	if err != nil || resp.StatusCode != 200 {
+		return "", fmt.Errorf("could not find Elixir v%s", version)
+	}
+	defer resp.Body.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(hasher, resp.Body); err != nil {
+		return "", err
+	}
+	hash := hex.EncodeToString(hasher.Sum(nil))
+
+	return fmt.Sprintf(`{
+  description = "Elixir %s Custom Environment";
+  inputs.nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+
+  outputs = { self, nixpkgs }: let
+    system = "x86_64-linux";
+    pkgs = import nixpkgs { inherit system; };
+
+    elixirCustom = pkgs.stdenv.mkDerivation {
+      pname = "elixir";
+      version = "%s";
+      src = pkgs.fetchurl {
+        url = "%s";
+        sha256 = "%s";
+      };
+
+      nativeBuildInputs = [ pkgs.makeWrapper ];
+      buildInputs = [ pkgs.erlang_26 ];
+
+      buildPhase = "make";
+      installPhase = ''
+        mkdir -p $out
+        cp -r bin lib man %s $out/
+      '';
+    };
+  in {
+    devShells.${system}.default = pkgs.mkShell {
+      packages = [
+        elixirCustom
+        pkgs.erlang_26
+        pkgs.elixir-ls
+        pkgs.inotify-tools
+      ];
+      shellHook = ''
+        export HEX_HOME=$PWD/.nix-hex
+        export MIX_HOME=$PWD/.nix-mix
+        export PATH=$MIX_HOME/bin:$HEX_HOME/bin:$PATH
+        mkdir -p $HEX_HOME $MIX_HOME
+      '';
+    };
+  };
+}`, version, version, url, hash, "${out}"), nil
+}
+
 func getProjectName() string {
-	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd := exec.Command("git", "rev-parse", "--git-common-dir")
 	output, err := cmd.Output()
 	if err == nil {
-		return filepath.Base(strings.TrimSpace(string(output)))
+		path := strings.TrimSpace(string(output))
+		absPath, _ := filepath.Abs(path)
+
+		base := filepath.Base(absPath)
+		if base == ".git" {
+			return filepath.Base(filepath.Dir(absPath))
+		}
+		return strings.TrimSuffix(base, ".git")
 	}
+
 	wd, _ := os.Getwd()
 	return filepath.Base(wd)
 }
@@ -675,27 +745,25 @@ func removeFromEnvrc(targetDir string) {
 }
 
 func setupGitIgnore() {
-	excludePath := ".git/info/exclude"
-	if _, err := os.Stat(".git"); os.IsNotExist(err) {
+	cmd := exec.Command("git", "rev-parse", "--git-path", "info/exclude")
+	out, err := cmd.Output()
+	if err != nil {
 		return
 	}
+	excludePath := strings.TrimSpace(string(out))
+
+	os.MkdirAll(filepath.Dir(excludePath), 0755)
 
 	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		fmt.Printf("%sWarning: Could not update .git/info/exclude%s\n", ColorYellow, ColorReset)
 		return
 	}
 	defer f.Close()
 
 	content, _ := os.ReadFile(excludePath)
-	strContent := string(content)
-
-	ignores := []string{".envrc", ".direnv"}
-	for _, ignore := range ignores {
-		if !strings.Contains(strContent, ignore) {
-			f.WriteString(ignore + "\n")
-			fmt.Printf("Added %s to local git exclude\n", ignore)
-		}
+	if !strings.Contains(string(content), ".envrc") {
+		f.WriteString(".envrc\n.direnv\n")
+		fmt.Printf("Updated git excludes at: %s\n", excludePath)
 	}
 }
 
