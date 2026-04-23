@@ -211,11 +211,9 @@ func generateNodeJS(version string) (string, error) {
     };
   in {
     devShells.${system}.default = pkgs.mkShell {
-      packages = [ 
+      packages = [
         nodeCustom
         pkgs.typescript-language-server
-        pkgs.yarn
-        pkgs.pnpm
         pkgs.prettierd
         pkgs.biome
         pkgs.vscode-langservers-extracted
@@ -225,6 +223,12 @@ func generateNodeJS(version string) (string, error) {
         LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [ pkgs.libuuid pkgs.stdenv.cc.cc.lib ];
         NODE_PATH = "$out/lib/node_modules";
       };
+      shellHook = ''
+        export COREPACK_HOME="$PWD/.nix-corepack"
+        mkdir -p "$COREPACK_HOME/bin"
+        export PATH="$COREPACK_HOME/bin:$PATH"
+        ${nodeCustom}/bin/corepack enable --install-directory "$COREPACK_HOME/bin" >/dev/null 2>&1 || true
+      '';
     };
   };
 }`, version, version, version, version, arch, hash), nil
