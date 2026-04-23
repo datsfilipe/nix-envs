@@ -226,6 +226,7 @@ func generateNodeJS(version string) (string, error) {
       shellHook = ''
         export COREPACK_HOME="$PWD/.nix-corepack"
         mkdir -p "$COREPACK_HOME/bin"
+        [ -f "$COREPACK_HOME/package.json" ] || printf '{"type":"commonjs"}' > "$COREPACK_HOME/package.json"
         export PATH="$COREPACK_HOME/bin:$PATH"
         ${nodeCustom}/bin/corepack enable --install-directory "$COREPACK_HOME/bin" >/dev/null 2>&1 || true
       '';
