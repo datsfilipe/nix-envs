@@ -766,8 +766,21 @@ func setupGitIgnore() {
 	defer f.Close()
 
 	content, _ := os.ReadFile(excludePath)
-	if !strings.Contains(string(content), ".envrc") {
-		f.WriteString(".envrc\n.direnv\n")
+	existing := strings.Split(string(content), "\n")
+	seen := make(map[string]bool, len(existing))
+	for _, line := range existing {
+		seen[strings.TrimSpace(line)] = true
+	}
+
+	entries := []string{".envrc", ".direnv", ".nix-corepack"}
+	added := false
+	for _, e := range entries {
+		if !seen[e] {
+			f.WriteString(e + "\n")
+			added = true
+		}
+	}
+	if added {
 		fmt.Printf("Updated git excludes at: %s\n", excludePath)
 	}
 }
