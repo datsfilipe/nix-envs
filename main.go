@@ -213,9 +213,9 @@ func generateNodeJS(version string) (string, error) {
     devShells.${system}.default = pkgs.mkShell {
       packages = [ 
         nodeCustom
-        pkgs.nodePackages.typescript-language-server
-        pkgs.nodePackages.yarn
-        pkgs.nodePackages.pnpm
+        pkgs.typescript-language-server
+        pkgs.yarn
+        pkgs.pnpm
         pkgs.prettierd
         pkgs.biome
         pkgs.vscode-langservers-extracted
@@ -485,7 +485,7 @@ func generateBun(version string) (string, error) {
     devShells.${system}.default = pkgs.mkShell {
       packages = [ 
         bunCustom
-        pkgs.nodePackages.typescript-language-server
+        pkgs.typescript-language-server
         pkgs.prettierd
         pkgs.biome
         pkgs.vscode-langservers-extracted
